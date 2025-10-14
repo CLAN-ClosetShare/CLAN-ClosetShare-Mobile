@@ -78,6 +78,7 @@ class LocalStorageImpl implements LocalStorage {
 // Keys for common storage items
 class StorageKeys {
   static const String authToken = 'auth_token';
+  static const String refreshToken = 'refresh_token';
   static const String userId = 'user_id';
   static const String userName = 'user_name';
   static const String userEmail = 'user_email';

@@ -1,0 +1,266 @@
+{
+  "baseUrl": "import.meta.env.VITE_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/api'",
+  "notes": "Endpoints are relative to baseUrl. Tokens are stored in localStorage (access_token, refresh_token). On 401 fetcher will attempt refresh by POSTing to /auth/refresh-token and retry original request.",
+  "endpoints": [
+    {
+      "file": "src/apis/auth.api.ts",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/auth/login",
+          "requestExample": {
+            "email": "user@example.com",
+            "password": "s3cr3t"
+          },
+          "responseExample": {
+            "access_token": "eyJ...",
+            "refresh_token": "r3fr3sh..."
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/auth/register",
+          "requestExample": {
+            "name": "John Doe",
+            "email": "john@example.com",
+            "password": "s3cr3t",
+            "phone_number": "+84123456789"
+          },
+          "responseExample": {
+            "access_token": "eyJ...",
+            "refresh_token": "r3fr3sh..."
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/auth/logout",
+          "requestExample": null,
+          "responseExample": { "message": "ok" }
+        },
+        {
+          "method": "POST",
+          "path": "/auth/refresh-token",
+          "requestExample": { "refresh_token": "r3fr3sh..." },
+          "responseExample": {
+            "access_token": "new_access...",
+            "refresh_token": "new_refresh..."
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/auth/forgot-password",
+          "requestExample": { "email": "john@example.com" },
+          "responseExample": { "message": "email_sent" }
+        },
+        {
+          "method": "POST",
+          "path": "/auth/reset-password",
+          "requestExample": { "token": "reset-token", "password": "new-pass" },
+          "responseExample": { "message": "password_reset" }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/filter.api.ts",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/filters",
+          "requestExample": null,
+          "responseExample": { "data": [] }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/order.api.ts",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/orders",
+          "requestExample": {
+            "receiver_name": "John Buyer",
+            "phone_number": "+84123456789",
+            "address": "123 Street",
+            "province_id": 1,
+            "ward_id": 10,
+            "type": "SALE",
+            "payment_method": "PAYOS",
+            "items": [{ "variant_id": "var_1", "quantity": 2 }]
+          },
+          "note": "frontend sends `item: payload.items` in the request body to match backend expectations",
+          "responseExample": { "order_id": "ord_123", "status": "created" }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/product.api.ts",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/products",
+          "queryParams": [
+            "page",
+            "limit",
+            "search",
+            "type",
+            "shopId",
+            "sort",
+            "sizes",
+            "priceMin",
+            "priceMax",
+            "filterPropIds",
+            "price_min",
+            "price_max",
+            "filter_prop_ids"
+          ],
+          "responseExample": {
+            "data": [
+              {
+                "id": "prod_1",
+                "name": "Sneaker X",
+                "description": "Nice shoes",
+                "images": ["https://.../1.jpg"],
+                "variants": [
+                  {
+                    "id": "var_1",
+                    "product_id": "prod_1",
+                    "name": "Size 42",
+                    "type": "size",
+                    "stock": 10,
+                    "imgs": ["https://.../var1.jpg"],
+                    "pricings": [
+                      { "id": "p1", "variant_id": "var_1", "price": 120 }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "page": 1,
+            "limit": 10,
+            "total": 100
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/products/:id",
+          "responseExample": { "id": "prod_1", "name": "Sneaker X" }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/shop.api.ts",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/shops",
+          "requestExample": {
+            "name": "My Shop",
+            "description": "We sell stuff"
+          },
+          "responseExample": { "id": "shop_1", "name": "My Shop" }
+        },
+        {
+          "method": "GET",
+          "path": "/shops/:id",
+          "responseExample": { "id": "shop_1", "name": "My Shop" }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/social.api.ts",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/posts/feed",
+          "queryParams": ["page", "limit"],
+          "responseExample": { "data": [] }
+        },
+        {
+          "method": "POST",
+          "path": "/posts/:postId/like",
+          "responseExample": { "liked": true }
+        },
+        {
+          "method": "DELETE",
+          "path": "/posts/:postId/like",
+          "responseExample": { "liked": false }
+        },
+        {
+          "method": "POST",
+          "path": "/posts/:postId/comments",
+          "requestExample": { "text": "Nice post!" },
+          "responseExample": { "comment_id": "c_1" }
+        },
+        {
+          "method": "GET",
+          "path": "/stories",
+          "responseExample": { "data": [] }
+        },
+        {
+          "method": "POST",
+          "path": "/stories/:storyId/view",
+          "responseExample": { "ok": true }
+        },
+        {
+          "method": "POST",
+          "path": "/users/:userId/follow",
+          "responseExample": { "following": true }
+        },
+        {
+          "method": "DELETE",
+          "path": "/users/:userId/follow",
+          "responseExample": { "following": false }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/subscription.api.ts",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/subscriptions",
+          "responseExample": [{ "id": "plan_1", "name": "Basic", "price": 100 }]
+        },
+        {
+          "method": "POST",
+          "path": "/subscriptions/order",
+          "requestExample": {
+            "subscription_plan_id": "plan_1",
+            "payment_method": "PAYOS"
+          },
+          "responseExample": {
+            "order_id": "suborder_1",
+            "checkoutUrl": "https://pay.example/checkout/abc"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/me/subscription",
+          "responseExample": { "id": "sub_1", "name": "Basic" }
+        }
+      ]
+    },
+    {
+      "file": "src/apis/user.api.ts",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/users/me",
+          "responseExample": {
+            "id": "user_123",
+            "name": "John Doe",
+            "email": "john@example.com",
+            "phone": "+84123456789",
+            "avatarUrl": "https://.../avatar.jpg"
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/users/me",
+          "requestExample": { "name": "Jane Doe", "phone": "+84987654321" },
+          "responseExample": { "id": "user_123", "name": "Jane Doe" }
+        }
+      ]
+    }
+  ]
+}

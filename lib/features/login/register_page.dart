@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
@@ -55,9 +55,8 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_formKey.currentState?.validate() ?? false) {
       _formKey.currentState?.save();
       // TODO: call API register with: _emailCtl.text, _passCtl.text, _phoneFull
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Validation passed. Submitting...')),
-      );
+      // For now return the email to the previous screen so it can be prefilled
+      Navigator.of(context).pop(_emailCtl.text.trim());
     }
   }
 
@@ -317,7 +316,7 @@ class _SocialSignInButtons extends StatelessWidget {
       ),
     ];
 
-    if (Platform.isIOS) {
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       buttons.insertAll(0, [
         SizedBox(
           width: double.infinity,

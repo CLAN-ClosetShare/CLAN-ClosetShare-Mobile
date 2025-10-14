@@ -1,14 +1,14 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 class AppUtils {
   // Platform checks
-  static bool get isAndroid => Platform.isAndroid;
-  static bool get isIOS => Platform.isIOS;
-  static bool get isMobile => Platform.isAndroid || Platform.isIOS;
+  // Use Flutter's `defaultTargetPlatform` and `kIsWeb` so this utility
+  // can run on web without importing `dart:io` which is unsupported on web.
+  static bool get isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool get isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  static bool get isMobile => isAndroid || isIOS;
   static bool get isWeb => kIsWeb;
-  static bool get isDesktop =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  static bool get isDesktop => !kIsWeb && (defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.linux || defaultTargetPlatform == TargetPlatform.macOS);
 
   // Debug helpers
   static void debugPrint(String message) {

@@ -1,8 +1,9 @@
-import 'dart:io' show Platform;
-import 'package:closetshare/features/login/onboard_slide.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:closetshare/features/login/register_page.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:closetshare/core/di/injection_container.dart' as di;
+import 'package:closetshare/core/repositories/auth_repository.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,6 +14,65 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _obscure = true;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  bool _showedAutoLogout = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_showedAutoLogout) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map && (args['autoLogout'] == true)) {
+        final String msg =
+            args['message'] as String? ??
+            'Session expired, please log in again';
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted)
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(msg)));
+        });
+        _showedAutoLogout = true;
+      }
+    }
+  }
+
+  Future<void> _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter email and password')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final authRepo = di.sl<AuthRepository>();
+      await authRepo.login(email, password);
+      // Simple success handling: navigate to home (ensure widget still mounted)
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Login error: $e')));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,10 +119,11 @@ class _LoginPageState extends State<LoginPage> {
               style: TextStyle(fontSize: 14, color: Color(0xFF797878)),
             ),
             const SizedBox(height: 6),
-            const TextField(
+            TextField(
+              controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: "Enter your email",
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.email_outlined),
@@ -77,6 +138,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 6),
             TextField(
+              controller: _passwordController,
               obscureText: _obscure,
               textInputAction: TextInputAction.done,
               decoration: InputDecoration(
@@ -114,14 +176,7 @@ class _LoginPageState extends State<LoginPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const OnboardingPage(),
-                    ),
-                  );
-                },
+                onPressed: _isLoading ? null : _login,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: brandNavy,
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -130,7 +185,16 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   elevation: 0,
                 ),
-                child: const Text("Login"),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text("Login"),
               ),
             ),
 
@@ -169,13 +233,16 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(width: 8),
                 InkWell(
-                  onTap: () {
-                    Navigator.push(
+                  onTap: () async {
+                    final result = await Navigator.push<String>(
                       context,
                       MaterialPageRoute(
                         builder: (context) => const RegisterPage(),
                       ),
                     );
+                    if (result != null && result.isNotEmpty) {
+                      setState(() => _emailController.text = result);
+                    }
                   },
                   child: const Text(
                     "Register",
@@ -251,7 +318,7 @@ class SocialSignInButtons extends StatelessWidget {
       ),
     ];
 
-    if (Platform.isIOS) {
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       buttons.insertAll(0, [
         SizedBox(
           width: double.infinity,
