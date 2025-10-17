@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../data/models/clothing_item.dart';
 import '../../../../shared/widgets/custom_text_field.dart';
+import 'package:closetshare/core/network/api_client.dart';
+import 'package:closetshare/core/di/injection_container.dart' as di;
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -12,15 +15,38 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   final TextEditingController _searchController = TextEditingController();
-  final List<ClothingItem> _searchResults = ClothingItem.mockData;
+  final List<ClothingItem> _searchResults = List<ClothingItem>.from(
+    ClothingItem.mockData,
+  );
   List<ClothingItem> _filteredResults = ClothingItem.mockData;
   String _selectedCategory = 'Tất cả';
   bool _isSearching = false;
+  final ApiClient _api = di.sl<ApiClient>();
+  bool _useApi = true; // toggle to use API or mock data
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    // initial load from API if enabled
+    _loadInitial();
+  }
+
+  Future<void> _loadInitial() async {
+    if (!_useApi) return;
+    try {
+      final res = await _api.getProducts();
+      final items = ClothingItem.fromApiList(res);
+      if (items.isNotEmpty) {
+        setState(() {
+          _searchResults.clear();
+          _searchResults.addAll(items);
+          _filteredResults = _filterByCategory(_searchResults);
+        });
+      }
+    } catch (e) {
+      // leave mock data
+    }
   }
 
   @override
@@ -31,7 +57,8 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _onSearchChanged() {
-    if (_searchController.text.isEmpty) {
+    final q = _searchController.text.trim();
+    if (q.isEmpty) {
       setState(() {
         _isSearching = false;
         _filteredResults = _filterByCategory(_searchResults);
@@ -39,9 +66,7 @@ class _SearchPageState extends State<SearchPage> {
     } else {
       setState(() {
         _isSearching = true;
-        _filteredResults = _filterByCategory(
-          ClothingItem.search(_searchController.text),
-        );
+        _filteredResults = _filterByCategory(_localSearch(q));
       });
     }
   }
@@ -58,7 +83,7 @@ class _SearchPageState extends State<SearchPage> {
       _selectedCategory = category;
       if (_isSearching) {
         _filteredResults = _filterByCategory(
-          ClothingItem.search(_searchController.text),
+          _localSearch(_searchController.text.trim()),
         );
       } else {
         _filteredResults = _filterByCategory(_searchResults);
@@ -66,9 +91,27 @@ class _SearchPageState extends State<SearchPage> {
     });
   }
 
+  // Local search over loaded list
+  List<ClothingItem> _localSearch(String query) {
+    final q = query.toLowerCase();
+    final source = _searchResults;
+    return source.where((item) {
+      final name = item.name.toLowerCase();
+      final brand = item.brand.toLowerCase();
+      final category = item.category.toLowerCase();
+      final color = item.color.toLowerCase();
+      final sizes = item.sizes.join(',').toLowerCase();
+      return name.contains(q) ||
+          brand.contains(q) ||
+          category.contains(q) ||
+          color.contains(q) ||
+          sizes.contains(q);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final categories = ClothingItem.getCategories();
+    final categories = ClothingItem.getCategories(from: _searchResults);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -85,6 +128,23 @@ class _SearchPageState extends State<SearchPage> {
         elevation: 0,
         automaticallyImplyLeading: false,
         actions: [
+          // API toggle (debug) and filter/camera icons
+          if (kDebugMode)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                children: [
+                  const Text('API', style: TextStyle(color: Colors.black54)),
+                  Switch(
+                    value: _useApi,
+                    onChanged: (v) async {
+                      setState(() => _useApi = v);
+                      if (v) await _loadInitial();
+                    },
+                  ),
+                ],
+              ),
+            ),
           IconButton(
             onPressed: () {
               _showFilterDialog();
@@ -213,6 +273,8 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildClothingCard(ClothingItem item) {
+    final img = item.images.isNotEmpty ? item.images.first : '';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
@@ -231,7 +293,7 @@ class _SearchPageState extends State<SearchPage> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: CachedNetworkImage(
-                  imageUrl: item.imageUrl,
+                  imageUrl: img,
                   width: 80,
                   height: 80,
                   fit: BoxFit.cover,
@@ -287,7 +349,7 @@ class _SearchPageState extends State<SearchPage> {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'Size ${item.size}',
+                            'Size ${item.sizes.isNotEmpty ? item.sizes.first : '-'}',
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
@@ -391,7 +453,9 @@ class _SearchPageState extends State<SearchPage> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: CachedNetworkImage(
-                        imageUrl: item.imageUrl,
+                        imageUrl: item.images.isNotEmpty
+                            ? item.images.first
+                            : '',
                         width: double.infinity,
                         height: 250,
                         fit: BoxFit.cover,

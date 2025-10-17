@@ -1,6 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../search/data/models/clothing_item.dart';
+import 'package:closetshare/core/network/api_client.dart';
+import 'package:closetshare/core/network/dio_client.dart';
+import 'package:dio/dio.dart';
+import 'dart:convert';
+import 'package:closetshare/core/storage/local_storage.dart';
+import 'package:closetshare/core/di/injection_container.dart' as di;
+
+// Simple models for filters returned by /filters
+class FilterPropModel {
+  final String id;
+  final String name;
+  bool selected;
+
+  FilterPropModel({
+    required this.id,
+    required this.name,
+    this.selected = false,
+  });
+}
+
+class FilterModel {
+  final String id;
+  final String name; // display name, e.g. 'Size'
+  final List<FilterPropModel> props;
+
+  FilterModel({required this.id, required this.name, required this.props});
+}
 
 class ShopPage extends StatefulWidget {
   const ShopPage({super.key});
@@ -10,7 +37,132 @@ class ShopPage extends StatefulWidget {
 }
 
 class _ShopPageState extends State<ShopPage> {
-  final List<ClothingItem> _shopItems = ClothingItem.mockData;
+  final List<ClothingItem> _shopItems = [];
+  late final ApiClient _api;
+  LocalStorage? _localStorage;
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoading = false;
+  int _page = 1;
+  final int _limit = 10;
+  bool _hasMore = true;
+  // Filters (generic)
+  List<FilterModel> _filters = [];
+  bool _filtersLoaded = false;
+  static const String _filtersStorageKey = 'shop_filters_v1';
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    // create ApiClient locally (no DI)
+    final dio = Dio();
+    final dioClient = DioClient(dio);
+    _api = ApiClient(dioClient);
+    // try to get LocalStorage from DI if available
+    try {
+      _localStorage = di.sl<LocalStorage>();
+    } catch (_) {
+      _localStorage = null;
+    }
+    _fetchFilters();
+    _fetchProducts();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_hasMore || _isLoading) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _fetchProducts();
+    }
+  }
+
+  Future<void> _fetchFilters() async {
+    try {
+      final res = await _api.getFilters();
+      // parse generic filters: { filters: [ { id, name, props: [{id,name}] } ] }
+      if (res is Map && res['filters'] is List) {
+        final list = res['filters'] as List;
+        final parsed = <FilterModel>[];
+        for (var f in list) {
+          try {
+            final map = Map<String, dynamic>.from(f);
+            final propsRaw = map['props'] as List? ?? [];
+            final props = propsRaw.map((p) {
+              final pm = Map<String, dynamic>.from(p);
+              return FilterPropModel(
+                id: pm['id']?.toString() ?? '',
+                name: pm['name']?.toString() ?? '',
+              );
+            }).toList();
+            parsed.add(
+              FilterModel(
+                id: map['id']?.toString() ?? '',
+                name: map['name']?.toString() ?? '',
+                props: props,
+              ),
+            );
+          } catch (_) {}
+        }
+        _filters = parsed;
+        // load saved selections if present
+        await _loadSavedFilters();
+      }
+      setState(() => _filtersLoaded = true);
+    } catch (e) {
+      setState(() => _filtersLoaded = true);
+    }
+  }
+
+  Future<void> _fetchProducts({bool refresh = false}) async {
+    if (_isLoading) return;
+    if (refresh) {
+      _page = 1;
+      _hasMore = true;
+    }
+    setState(() => _isLoading = true);
+    try {
+      final selectedSizes = _filters
+          .firstWhere(
+            (f) => f.name.toLowerCase() == 'size',
+            orElse: () => FilterModel(id: '', name: '', props: []),
+          )
+          .props
+          .where((p) => p.selected)
+          .map((p) => p.name)
+          .toList();
+
+      final qp = ClothingItem.buildFilterQuery(
+        page: _page,
+        limit: _limit,
+        sizes: selectedSizes.isNotEmpty ? selectedSizes : null,
+      );
+      final res = await _api.getProducts(queryParameters: qp);
+      final items = ClothingItem.fromApiList(res);
+      setState(() {
+        if (refresh) {
+          _shopItems.clear();
+        }
+        _shopItems.addAll(items);
+        if (items.length < _limit) _hasMore = false;
+        _page += 1;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lấy sản phẩm thất bại: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,29 +185,45 @@ class _ShopPageState extends State<ShopPage> {
             onPressed: () {},
             icon: const Icon(Icons.photo_camera, color: Colors.black87),
           ),
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.tune, color: Colors.black87),
-          ),
+          // IconButton(
+          //   onPressed: () => _openFilterSheet(),
+          //   icon: const Icon(Icons.tune, color: Colors.black87),
+          // ),
+          _buildFilterIcon(),
           IconButton(
             onPressed: () {},
             icon: const Icon(Icons.bookmark_border, color: Colors.black87),
           ),
         ],
       ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.6,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: _shopItems.length,
-        itemBuilder: (context, index) {
-          final item = _shopItems[index];
-          return _buildShopCard(item);
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _fetchProducts(refresh: true);
         },
+        child: GridView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.6,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: _shopItems.length + (_hasMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index >= _shopItems.length) {
+              // loading indicator at the end
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            final item = _shopItems[index];
+            return _buildShopCard(item);
+          },
+        ),
       ),
     );
   }
@@ -82,7 +250,7 @@ class _ShopPageState extends State<ShopPage> {
                       top: Radius.circular(12),
                     ),
                     child: CachedNetworkImage(
-                      imageUrl: item.imageUrl,
+                      imageUrl: item.images.isNotEmpty ? item.images.first : '',
                       width: double.infinity,
                       height: double.infinity,
                       fit: BoxFit.cover,
@@ -276,7 +444,9 @@ class _ShopPageState extends State<ShopPage> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: CachedNetworkImage(
-                        imageUrl: item.imageUrl,
+                        imageUrl: item.images.isNotEmpty
+                            ? item.images.first
+                            : '',
                         width: double.infinity,
                         height: 250,
                         fit: BoxFit.cover,
@@ -386,6 +556,219 @@ class _ShopPageState extends State<ShopPage> {
           ],
         ),
       ),
+    );
+  }
+
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final h = MediaQuery.of(context).size.height * 0.75;
+        return SafeArea(
+          child: Container(
+            height: h,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Bộ lọc',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                // Content scrolls
+                Expanded(
+                  child: _filtersLoaded
+                      ? SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ..._filters.map((filter) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        filter.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: filter.props.map((prop) {
+                                          return ChoiceChip(
+                                            label: Text(prop.name),
+                                            selected: prop.selected,
+                                            onSelected: (v) {
+                                              setState(() {
+                                                prop.selected = v;
+                                              });
+                                            },
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              const SizedBox(height: 24),
+                            ],
+                          ),
+                        )
+                      : const Center(child: CircularProgressIndicator()),
+                ),
+                // Action row fixed at bottom
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            setState(() {
+                              for (var filter in _filters) {
+                                for (var prop in filter.props) {
+                                  prop.selected = false;
+                                }
+                              }
+                            });
+                          },
+                          child: const Text('Xóa'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _applyFilters();
+                          },
+                          child: const Text('Áp dụng'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _applyFilters() {
+    // rebuild query with selected sizes
+    setState(() {
+      _shopItems.clear();
+      _page = 1;
+      _hasMore = true;
+    });
+    // persist selections
+    _saveSelectedFilters();
+    _fetchProducts(refresh: true);
+  }
+
+  int _selectedCount() {
+    var c = 0;
+    for (var f in _filters) {
+      c += f.props.where((p) => p.selected).length;
+    }
+    return c;
+  }
+
+  Future<void> _saveSelectedFilters() async {
+    try {
+      final Map<String, dynamic> map = {};
+      for (var f in _filters) {
+        final ids = f.props.where((p) => p.selected).map((p) => p.id).toList();
+        if (ids.isNotEmpty) map[f.id] = ids;
+      }
+      if (_localStorage != null) {
+        await _localStorage!.saveString(_filtersStorageKey, jsonEncode(map));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadSavedFilters() async {
+    try {
+      if (_localStorage == null) return;
+      final raw = await _localStorage!.getString(_filtersStorageKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      for (var f in _filters) {
+        final saved = data[f.id] as List<dynamic>?;
+        if (saved == null) continue;
+        final ids = saved.map((e) => e.toString()).toSet();
+        for (var p in f.props) {
+          p.selected = ids.contains(p.id);
+        }
+      }
+      setState(() {});
+    } catch (_) {}
+  }
+
+  // Build filter icon with badge
+  Widget _buildFilterIcon() {
+    final count = _selectedCount();
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        IconButton(
+          onPressed: () => _openFilterSheet(),
+          icon: const Icon(Icons.tune, color: Colors.black87),
+        ),
+        if (count > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+              child: Center(
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:closetshare/features/login/register_page.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -37,10 +38,11 @@ class _LoginPageState extends State<LoginPage> {
             args['message'] as String? ??
             'Session expired, please log in again';
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted)
+          if (mounted) {
             ScaffoldMessenger.of(
               context,
             ).showSnackBar(SnackBar(content: Text(msg)));
+          }
         });
         _showedAutoLogout = true;
       }
@@ -61,14 +63,14 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final authRepo = di.sl<AuthRepository>();
       await authRepo.login(email, password);
-      // Simple success handling: navigate to home (ensure widget still mounted)
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
+      // After successful login, go to onboarding first, then user will proceed to home
+      Navigator.pushReplacementNamed(context, '/onboard');
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Login error: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -159,7 +161,8 @@ class _LoginPageState extends State<LoginPage> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () => Navigator.pushNamed(context, '/forgot'),
+                onPressed: () =>
+                    Navigator.pushNamed(context, '/forgot-password'),
                 style: TextButton.styleFrom(padding: EdgeInsets.zero),
                 child: const Text(
                   "Forgot Password?",
@@ -318,7 +321,7 @@ class SocialSignInButtons extends StatelessWidget {
       ),
     ];
 
-  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       buttons.insertAll(0, [
         SizedBox(
           width: double.infinity,

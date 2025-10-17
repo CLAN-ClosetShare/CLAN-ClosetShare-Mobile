@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
@@ -11,6 +13,7 @@ class OnboardingPage extends StatefulWidget {
 class _OnboardingPageState extends State<OnboardingPage> {
   final PageController _controller = PageController();
   int _currentPage = 0;
+  Timer? _autoPlayTimer;
 
   final List<Map<String, String>> _pages = [
     {
@@ -29,7 +32,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       "image": "https://picsum.photos/id/1015/600/400",
       "title": "Start Your Journey",
       "desc":
-          "Join our community and take your first step into the world of Closet Share.",
+          "Join our community and take your first steps toward a more organized and stylish wardrobe.",
     },
   ];
 

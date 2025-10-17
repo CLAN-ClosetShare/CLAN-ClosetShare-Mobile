@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'core/di/injection_container.dart' as di;
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_navigator.dart';
-import 'features/auth/auth_page.dart';
-import 'features/auth/login_page.dart' as auth_login;
-import 'features/auth/register_page.dart';
+import 'features/login/welcome.dart';
+import 'features/login/onboard_slide.dart';
+import 'features/login/login_page.dart' as auth_login;
+import 'features/login/register_page.dart';
 import 'features/auth/forgot_password_page.dart';
 
 void main() async {
@@ -18,6 +19,8 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -26,12 +29,13 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
-      home: AuthPage(),
+      home: const WelcomePage(),
       debugShowCheckedModeBanner: false,
       routes: {
         '/login': (context) => auth_login.LoginPage(),
         '/register': (context) => RegisterPage(),
         '/forgot-password': (context) => ForgotPasswordPage(),
+        '/onboard': (context) => const OnboardingPage(),
         '/home': (context) => const MainNavigationPage(),
       },
     );

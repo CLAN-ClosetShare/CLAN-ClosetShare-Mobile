@@ -79,4 +79,27 @@ class ApiClient {
       throw Exception('Registration failed: $e');
     }
   }
+
+  // Fetch products with optional query parameters (filters)
+  Future<dynamic> getProducts({Map<String, dynamic>? queryParameters}) async {
+    try {
+      final response = await dioClient.get(
+        '/products',
+        queryParameters: queryParameters,
+      );
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch products: $e');
+    }
+  }
+
+  // Fetch available filters (e.g., sizes, colors, props)
+  Future<dynamic> getFilters() async {
+    try {
+      final response = await dioClient.get('/filters');
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch filters: $e');
+    }
+  }
 }
