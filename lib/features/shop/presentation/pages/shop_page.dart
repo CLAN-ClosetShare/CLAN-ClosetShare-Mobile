@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../shared/widgets/network_image.dart';
 import '../../../search/data/models/clothing_item.dart';
 import 'package:closetshare/core/network/api_client.dart';
 import 'package:closetshare/core/network/dio_client.dart';
@@ -211,7 +211,7 @@ class _ShopPageState extends State<ShopPage> {
           ),
           itemCount: _shopItems.length + (_hasMore ? 1 : 0),
           itemBuilder: (context, index) {
-            if (index >= _shopItems.length) {
+            if (index >= _shopItems.length) { 
               // loading indicator at the end
               return const Center(
                 child: Padding(
@@ -249,22 +249,13 @@ class _ShopPageState extends State<ShopPage> {
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(12),
                     ),
-                    child: CachedNetworkImage(
-                      imageUrl: item.images.isNotEmpty ? item.images.first : '',
+                    child: SharedNetworkImage(
+                      imageUrl: item.images.isNotEmpty
+                          ? item.images.first
+                          : null,
                       width: double.infinity,
                       height: double.infinity,
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.image, color: Colors.grey),
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(
-                          Icons.broken_image,
-                          color: Colors.grey,
-                        ),
-                      ),
                     ),
                   ),
                   Positioned(
@@ -273,7 +264,7 @@ class _ShopPageState extends State<ShopPage> {
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withAlpha(230),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -293,7 +284,7 @@ class _ShopPageState extends State<ShopPage> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
+                        color: Colors.black.withAlpha(179),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
@@ -443,10 +434,10 @@ class _ShopPageState extends State<ShopPage> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
+                      child: SharedNetworkImage(
                         imageUrl: item.images.isNotEmpty
                             ? item.images.first
-                            : '',
+                            : null,
                         width: double.infinity,
                         height: 250,
                         fit: BoxFit.cover,

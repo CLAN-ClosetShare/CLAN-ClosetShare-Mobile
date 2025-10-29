@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../shared/widgets/network_image.dart';
 import '../../data/models/clothing_item.dart';
 import '../../../../shared/widgets/custom_text_field.dart';
 import 'package:closetshare/core/network/api_client.dart';
@@ -292,23 +292,11 @@ class _SearchPageState extends State<SearchPage> {
               // Image
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
+                child: SharedNetworkImage(
                   imageUrl: img,
                   width: 80,
                   height: 80,
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    width: 80,
-                    height: 80,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.image, color: Colors.grey),
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    width: 80,
-                    height: 80,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.broken_image, color: Colors.grey),
-                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -452,10 +440,10 @@ class _SearchPageState extends State<SearchPage> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
+                      child: SharedNetworkImage(
                         imageUrl: item.images.isNotEmpty
                             ? item.images.first
-                            : '',
+                            : null,
                         width: double.infinity,
                         height: 250,
                         fit: BoxFit.cover,

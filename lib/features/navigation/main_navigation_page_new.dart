@@ -181,7 +181,7 @@ class ProfilePage extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withAlpha(13),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -358,7 +358,7 @@ class ProfilePage extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withAlpha(13),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -369,7 +369,7 @@ class ProfilePage extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00073E).withOpacity(0.1),
+                    color: const Color(0xFF00073E).withAlpha(25),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, color: const Color(0xFF00073E), size: 20),

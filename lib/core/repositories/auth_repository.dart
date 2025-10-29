@@ -28,21 +28,28 @@ class AuthRepository {
         if (status >= 200 && status < 300) {
           return <String, dynamic>{};
         }
-        throw Exception('Login failed: empty response from server (status $status)');
+        throw Exception(
+          'Login failed: empty response from server (status $status)',
+        );
       }
       if (raw is! Map<String, dynamic>) {
         // Try to coerce other JSON shapes into a map by wrapping
         // but normally we expect a JSON object here.
-        throw Exception('Login failed: unexpected response shape: ${raw.runtimeType}');
+        throw Exception(
+          'Login failed: unexpected response shape: ${raw.runtimeType}',
+        );
       }
-  final data = raw;
+      final data = raw;
       // Attempt to extract and persist tokens from a variety of response shapes.
       final extracted = _extractTokensFromMap(data);
       if (extracted.accessToken != null) {
         await storage.saveString(StorageKeys.authToken, extracted.accessToken!);
       }
       if (extracted.refreshToken != null) {
-        await storage.saveString(StorageKeys.refreshToken, extracted.refreshToken!);
+        await storage.saveString(
+          StorageKeys.refreshToken,
+          extracted.refreshToken!,
+        );
       }
       return data;
     } on DioException catch (e) {
@@ -69,6 +76,7 @@ class AuthRepository {
       final resp = await dio.post(
         '/auth/refresh-token',
         data: {'refresh_token': refresh},
+        options: Options(extra: {'skipAuth': true}),
       );
       assert(() {
         // ignore: avoid_print
@@ -77,6 +85,43 @@ class AuthRepository {
         );
         return true;
       }());
+
+      // Check headers / cookies for tokens first (some servers return tokens in headers)
+      try {
+        final headersMap = resp.headers.map;
+        String? headerToken;
+        final headerCandidates = ['authorization', 'x-access-token', 'x-auth-token', 'x-token'];
+        for (final key in headerCandidates) {
+          if (headersMap.containsKey(key)) {
+            final v = resp.headers.value(key);
+            if (v != null && v.isNotEmpty) {
+              headerToken = v;
+              break;
+            }
+          }
+        }
+        if (headerToken != null && headerToken.isNotEmpty) {
+          final cleaned = headerToken.replaceFirst(RegExp(r'^(Bearer\s+)', caseSensitive: false), '');
+          await storage.saveString(StorageKeys.authToken, cleaned);
+          return true;
+        }
+
+        // Inspect Set-Cookie for token names
+        final cookies = headersMap['set-cookie'];
+        if (cookies != null) {
+          for (final cookie in cookies) {
+            final m1 = RegExp(r'access[_-]?token=([^;]+)').firstMatch(cookie);
+            final m2 = RegExp(r'auth[_-]?token=([^;]+)').firstMatch(cookie);
+            final m3 = RegExp(r'jwt=([^;]+)').firstMatch(cookie);
+            final candidate = m1?.group(1) ?? m2?.group(1) ?? m3?.group(1);
+            if (candidate != null && candidate.isNotEmpty) {
+              await storage.saveString(StorageKeys.authToken, candidate);
+              return true;
+            }
+          }
+        }
+      } catch (_) {}
+
       final raw = resp.data;
       if (raw == null) {
         final status = resp.statusCode ?? 0;
@@ -84,17 +129,21 @@ class AuthRepository {
         return false;
       }
       if (raw is! Map<String, dynamic>) return false;
-  final data = raw;
+      final data = raw;
       final extracted = _extractTokensFromMap(data);
       if (extracted.accessToken != null) {
         await storage.saveString(StorageKeys.authToken, extracted.accessToken!);
       }
       if (extracted.refreshToken != null) {
-        await storage.saveString(StorageKeys.refreshToken, extracted.refreshToken!);
+        await storage.saveString(
+          StorageKeys.refreshToken,
+          extracted.refreshToken!,
+        );
       }
-      // Consider refresh successful if we have updated at least the access token,
-      // otherwise if server responded with success status we still treat as ok.
-      return extracted.accessToken != null || (resp.statusCode != null && resp.statusCode! >= 200 && resp.statusCode! < 300);
+      // Consider refresh successful only if an access token was extracted and persisted.
+      // Do NOT treat an empty 2xx response as a successful token refresh — that causes
+      // the client to retry requests without a token and leads to immediate 401s.
+      return extracted.accessToken != null;
     } on DioException catch (_) {
       return false;
     } catch (_) {
@@ -109,7 +158,14 @@ class AuthRepository {
 
     void checkMap(Map<String, dynamic> m) {
       // common keys
-      final accessKeys = ['access_token', 'accessToken', 'token', 'auth_token', 'id_token', 'jwt'];
+      final accessKeys = [
+        'access_token',
+        'accessToken',
+        'token',
+        'auth_token',
+        'id_token',
+        'jwt',
+      ];
       final refreshKeys = ['refresh_token', 'refreshToken'];
       for (final k in accessKeys) {
         if (access != null) break;
@@ -129,6 +185,13 @@ class AuthRepository {
     }
     if ((access == null || refresh == null) && map['result'] is Map<String, dynamic>) {
       checkMap(map['result'] as Map<String, dynamic>);
+    }
+    // Also check 'token' or 'auth' wrapper commonly used by some APIs
+    if ((access == null || refresh == null) && map['token'] is Map<String, dynamic>) {
+      checkMap(map['token'] as Map<String, dynamic>);
+    }
+    if ((access == null || refresh == null) && map['auth'] is Map<String, dynamic>) {
+      checkMap(map['auth'] as Map<String, dynamic>);
     }
     // Also check if any immediate child maps contain tokens (one level deep)
     if (access == null || refresh == null) {

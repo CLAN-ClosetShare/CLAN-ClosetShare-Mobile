@@ -102,4 +102,97 @@ class ApiClient {
       throw Exception('Failed to fetch filters: $e');
     }
   }
+
+  // Closet APIs
+  Future<dynamic> getClosets() async {
+    try {
+      final response = await dioClient.get('/closets');
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch closets: $e');
+    }
+  }
+
+  Future<dynamic> createCloset(Map<String, dynamic> closet) async {
+    try {
+      final response = await dioClient.post('/closets', data: closet);
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to create closet: $e');
+    }
+  }
+
+  Future<dynamic> updateCloset(String id, Map<String, dynamic> closet) async {
+    try {
+      final response = await dioClient.put('/closets/$id', data: closet);
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to update closet: $e');
+    }
+  }
+
+  Future<bool> deleteCloset(String id) async {
+    try {
+      await dioClient.delete('/closets/$id');
+      return true;
+    } catch (e) {
+      throw Exception('Failed to delete closet: $e');
+    }
+  }
+
+  // Get closet by ID
+  Future<dynamic> getClosetById(String id) async {
+    try {
+      final response = await dioClient.get('/closets/$id');
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch closet: $e');
+    }
+  }
+
+  // Closet Items APIs
+  Future<dynamic> getClosetItems(String closetId) async {
+    try {
+      final response = await dioClient.get('/closets/$closetId/items');
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch closet items: $e');
+    }
+  }
+
+  Future<dynamic> getClosetItemById(String id) async {
+    try {
+      final response = await dioClient.get('/closet-items/$id');
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch closet item: $e');
+    }
+  }
+
+  Future<dynamic> createClosetItem(Map<String, dynamic> item) async {
+    try {
+      final response = await dioClient.post('/closet-items', data: item);
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to create closet item: $e');
+    }
+  }
+
+  Future<dynamic> updateClosetItem(String id, Map<String, dynamic> item) async {
+    try {
+      final response = await dioClient.put('/closet-items/$id', data: item);
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to update closet item: $e');
+    }
+  }
+
+  Future<bool> deleteClosetItem(String id) async {
+    try {
+      await dioClient.delete('/closet-items/$id');
+      return true;
+    } catch (e) {
+      throw Exception('Failed to delete closet item: $e');
+    }
+  }
 }
