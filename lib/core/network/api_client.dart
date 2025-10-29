@@ -195,4 +195,23 @@ class ApiClient {
       throw Exception('Failed to delete closet item: $e');
     }
   }
+
+  // User Profile APIs
+  Future<dynamic> getUserProfile() async {
+    try {
+      final response = await dioClient.get('/users/me');
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to fetch user profile: $e');
+    }
+  }
+
+  Future<dynamic> updateUserProfile(Map<String, dynamic> userData) async {
+    try {
+      final response = await dioClient.put('/users/me', data: userData);
+      return response.data;
+    } catch (e) {
+      throw Exception('Failed to update user profile: $e');
+    }
+  }
 }

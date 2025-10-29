@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cookie_jar/cookie_jar.dart';
 import '../../../../core/di/injection_container.dart' as di;
 import '../../../../core/network/api_client.dart';
-import '../../../../core/network/dio_client.dart';
 import '../../../../core/repositories/auth_repository.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -16,7 +14,6 @@ class _ProfilePageState extends State<ProfilePage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   final ApiClient _api = di.sl<ApiClient>();
-  final DioClient _dioClient = di.sl<DioClient>();
   final AuthRepository _auth = di.sl<AuthRepository>();
 
   Map<String, dynamic>? _user;
@@ -45,14 +42,11 @@ class _ProfilePageState extends State<ProfilePage>
     });
 
     try {
-      // Fetch user info (call /users/me)
+      // Fetch user info (call /users/me via ApiClient)
       try {
-        final resp = await _dioClient.dio.get('/users/me');
-        if (resp.statusCode != null && resp.statusCode! >= 200 && resp.statusCode! < 300) {
-          final data = resp.data;
-          if (data is Map<String, dynamic>) {
-            _user = data;
-          }
+        final data = await _api.getUserProfile();
+        if (data is Map<String, dynamic>) {
+          _user = data;
         }
       } catch (e, st) {
         // log and continue

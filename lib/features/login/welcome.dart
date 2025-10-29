@@ -1,13 +1,62 @@
 import 'package:closetshare/features/login/login_page.dart';
 import 'package:closetshare/features/login/register_page.dart';
+import 'package:closetshare/core/di/injection_container.dart' as di;
+import 'package:closetshare/core/repositories/auth_repository.dart';
 import 'package:flutter/material.dart';
 
-class WelcomePage extends StatelessWidget {
+class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
+
+  @override
+  State<WelcomePage> createState() => _WelcomePageState();
+}
+
+class _WelcomePageState extends State<WelcomePage> {
+  bool _checkingAuth = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthentication();
+  }
+
+  Future<void> _checkAuthentication() async {
+    try {
+      final authRepo = di.sl<AuthRepository>();
+      final isAuth = await authRepo.isAuthenticated();
+      
+      if (mounted) {
+        if (isAuth) {
+          // User is authenticated, redirect to home
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          // User is not authenticated, show welcome page
+          setState(() {
+            _checkingAuth = false;
+          });
+        }
+      }
+    } catch (e) {
+      // If check fails, show welcome page
+      if (mounted) {
+        setState(() {
+          _checkingAuth = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     const navy = Color(0xFF00073E);
+
+    // Show loading while checking authentication
+    if (_checkingAuth) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF3F4F6),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),

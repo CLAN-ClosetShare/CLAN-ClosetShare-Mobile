@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../storage/local_storage.dart';
 import '../repositories/auth_repository.dart';
@@ -21,8 +22,12 @@ class DioClient {
 
     // Attach a CookieJar + CookieManager so that Set-Cookie from server is respected
     // This helps when the backend uses HTTP-only cookies for session/auth.
-    final _cookieJar = cookieJar ?? CookieJar();
-    dio.interceptors.add(CookieManager(_cookieJar));
+    // Note: CookieManager from dio_cookie_manager doesn't work on web,
+    // so we only add it for mobile/desktop platforms. On web, Dio uses browser cookies automatically.
+    if (!kIsWeb) {
+      final _cookieJar = cookieJar ?? CookieJar();
+      dio.interceptors.add(CookieManager(_cookieJar));
+    }
 
     // Base configuration from env
     final envBase = dotenv.env['API_BASE_URL']?.trim();
@@ -66,7 +71,41 @@ class DioClient {
             if (!skipAuth) {
               final token = await storage?.getString(StorageKeys.authToken);
               if (token != null && token.isNotEmpty) {
-                options.headers['Authorization'] = 'Bearer $token';
+                // Validate token is a valid JWT string (starts with eyJ for base64 encoded JWT)
+                // If it looks like an object string, try to extract the actual token
+                String cleanToken = token.trim();
+                if (cleanToken.startsWith('{')) {
+                  // Token was stored as object string, try to extract access_token
+                  try {
+                    // Try to parse as JSON and extract access_token
+                    final jsonMatch = RegExp(r'"access_token"\s*:\s*"([^"]+)"').firstMatch(cleanToken);
+                    if (jsonMatch != null) {
+                      cleanToken = jsonMatch.group(1)!;
+                      debugPrint('WARNING: Token was stored as object. Extracted clean token.');
+                      // Also fix it in storage for future use
+                      await storage?.saveString(StorageKeys.authToken, cleanToken);
+                    } else {
+                      // Fallback: try to extract token-like string
+                      final tokenMatch = RegExp(r'eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+').firstMatch(cleanToken);
+                      if (tokenMatch != null) {
+                        cleanToken = tokenMatch.group(0)!;
+                        debugPrint('WARNING: Token was stored as object. Extracted JWT from string.');
+                        await storage?.saveString(StorageKeys.authToken, cleanToken);
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('Error extracting token from object string: $e');
+                  }
+                }
+                // Only use token if it looks like a valid JWT (starts with eyJ)
+                if (cleanToken.startsWith('eyJ')) {
+                  options.headers['Authorization'] = 'Bearer $cleanToken';
+                } else {
+                  debugPrint('DioClient.onRequest -> Invalid token format: ${cleanToken.substring(0, cleanToken.length > 50 ? 50 : cleanToken.length)}...');
+                }
+              } else {
+                // Debug: Log when token is missing
+                debugPrint('DioClient.onRequest -> ${options.method} ${options.path} - No token found in storage');
               }
             } else {
               // ensure Authorization header is not sent
@@ -75,10 +114,16 @@ class DioClient {
             // Debug: print Authorization header for troubleshooting
             assert(() {
               // ignore: avoid_print
-              print('DioClient.onRequest -> ${options.method} ${options.path} Authorization=${options.headers['Authorization']}');
+              final authHeader = options.headers['Authorization'];
+              final displayValue = authHeader != null 
+                ? (authHeader.length > 50 ? '${authHeader.substring(0, 50)}...' : authHeader)
+                : 'NONE';
+              print('DioClient.onRequest -> ${options.method} ${options.path} Authorization=$displayValue');
               return true;
             }());
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('DioClient.onRequest error: $e');
+          }
           handler.next(options);
         },
         onError: (error, handler) async {
@@ -101,6 +146,10 @@ class DioClient {
           // Only handle 401
           if (error.response?.statusCode == 401) {
             try {
+              // Check if we have a refresh token before attempting refresh
+              final refreshToken = await storage?.getString(StorageKeys.refreshToken);
+              debugPrint('DioClient: 401 error detected. Refresh token available: ${refreshToken != null && refreshToken.isNotEmpty}');
+              
               // If a refresh is already in progress, wait for it to complete
               if (_refreshCompleter != null) {
                 final ok = await _refreshCompleter!.future;
@@ -119,13 +168,63 @@ class DioClient {
                 }
                 // if refresh failed, proceed to error handling below
               } else {
+                // If no refresh token available, skip refresh attempt and go directly to logout
+                if (refreshToken == null || refreshToken.isEmpty) {
+                  debugPrint('DioClient: No refresh token available. Logging out and redirecting to login.');
+                  try {
+                    await authRepository?.logout();
+                  } catch (_) {}
+                  try {
+                    toastification.show(
+                      overlayState: appNavigatorKey.currentState?.overlay,
+                      title: const Text('Phiên đã hết hạn'),
+                      description: const Text('Vui lòng đăng nhập lại'),
+                      type: ToastificationType.warning,
+                      style: ToastificationStyle.fillColored,
+                      autoCloseDuration: const Duration(seconds: 4),
+                    );
+                  } catch (_) {}
+                  try {
+                    final nav = appNavigatorKey.currentState;
+                    if (nav != null) {
+                      final ctx = nav.context;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        showDialog<void>(
+                          context: ctx,
+                          barrierDismissible: false,
+                          builder: (dctx) => AlertDialog(
+                            title: const Text('Phiên đã hết hạn'),
+                            content: const Text('Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(dctx).pop();
+                                  nav.pushNamedAndRemoveUntil('/login', (r) => false, arguments: {
+                                    'autoLogout': true,
+                                    'message': 'Session expired, please log in again'
+                                  });
+                                },
+                                child: const Text('Đăng nhập'),
+                              ),
+                            ],
+                          ),
+                        );
+                      });
+                    }
+                  } catch (_) {}
+                  handler.next(error);
+                  return;
+                }
+
                 // start a refresh flow and notify waiters via completer
                 _refreshCompleter = Completer<bool>();
 
                 bool success = false;
                 try {
+                  debugPrint('DioClient: Attempting to refresh token...');
                   // Primary refresh attempt via repository helper which may parse and persist tokens
                   success = await authRepository?.refreshToken() ?? false;
+                  debugPrint('DioClient: Refresh token result: $success');
 
                   // If repo did not find tokens (server might use headers/cookies), try a raw refresh
                   if (!success) {
@@ -222,14 +321,15 @@ class DioClient {
                 }
 
                 // refresh failed -> logout and redirect to login
+                debugPrint('DioClient: Token refresh failed. Logging out and redirecting to login.');
                 try {
                   await authRepository?.logout();
                 } catch (_) {}
                 try {
                   toastification.show(
                     overlayState: appNavigatorKey.currentState?.overlay,
-                    title: const Text('Session expired'),
-                    description: const Text('Please log in again'),
+                    title: const Text('Phiên đã hết hạn'),
+                    description: const Text('Vui lòng đăng nhập lại'),
                     type: ToastificationType.warning,
                     style: ToastificationStyle.fillColored,
                     autoCloseDuration: const Duration(seconds: 4),
@@ -246,15 +346,11 @@ class DioClient {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       showDialog<void>(
                         context: ctx,
-                        barrierDismissible: true,
+                        barrierDismissible: false,
                         builder: (dctx) => AlertDialog(
                           title: const Text('Phiên đã hết hạn'),
                           content: const Text('Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại.'),
                           actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(dctx).pop(),
-                              child: const Text('Hủy'),
-                            ),
                             TextButton(
                               onPressed: () {
                                 Navigator.of(dctx).pop();
@@ -375,32 +471,65 @@ class DioClient {
     String? refresh;
 
     void checkMap(Map<String, dynamic> m) {
+      // common keys for access token (ONLY string values, NOT wrapper objects)
+      // Note: 'token' is NOT included here because it's a wrapper object, not a token value
       final accessKeys = [
         'access_token',
         'accessToken',
-        'token',
         'auth_token',
         'id_token',
         'jwt',
       ];
+      // common keys for refresh token
       final refreshKeys = ['refresh_token', 'refreshToken'];
+      
+      // Check for access token - ONLY accept String values
       for (final k in accessKeys) {
         if (access != null) break;
-        if (m.containsKey(k) && m[k] != null) access = m[k].toString();
+        if (m.containsKey(k) && m[k] != null) {
+          final value = m[k];
+          // ONLY accept String values, ignore objects/Maps
+          if (value is String && value.isNotEmpty) {
+            access = value;
+          }
+        }
       }
+      
+      // Check for refresh token - ONLY accept String values
       for (final k in refreshKeys) {
         if (refresh != null) break;
-        if (m.containsKey(k) && m[k] != null) refresh = m[k].toString();
+        if (m.containsKey(k) && m[k] != null) {
+          final value = m[k];
+          // ONLY accept String values, ignore objects/Maps
+          if (value is String && value.isNotEmpty) {
+            refresh = value;
+          }
+        }
       }
     }
 
-    checkMap(map);
+    // Priority 1: Check 'token' wrapper first (most common for your API)
+    if (map['token'] is Map<String, dynamic>) {
+      checkMap(map['token'] as Map<String, dynamic>);
+    }
+    
+    // Priority 2: Check top-level
+    if (access == null || refresh == null) {
+      checkMap(map);
+    }
+    
+    // Priority 3: Check common wrapper keys
     if ((access == null || refresh == null) && map['data'] is Map<String, dynamic>) {
       checkMap(map['data'] as Map<String, dynamic>);
     }
     if ((access == null || refresh == null) && map['result'] is Map<String, dynamic>) {
       checkMap(map['result'] as Map<String, dynamic>);
     }
+    if ((access == null || refresh == null) && map['auth'] is Map<String, dynamic>) {
+      checkMap(map['auth'] as Map<String, dynamic>);
+    }
+    
+    // Priority 4: Check if any immediate child maps contain tokens (one level deep)
     if (access == null || refresh == null) {
       for (final v in map.values) {
         if (v is Map<String, dynamic>) {

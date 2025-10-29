@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../../shared/widgets/network_image.dart';
 import '../../../search/data/models/clothing_item.dart';
 import 'package:closetshare/core/network/api_client.dart';
-import 'package:closetshare/core/network/dio_client.dart';
-import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:closetshare/core/storage/local_storage.dart';
 import 'package:closetshare/core/di/injection_container.dart' as di;
@@ -54,10 +52,8 @@ class _ShopPageState extends State<ShopPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    // create ApiClient locally (no DI)
-    final dio = Dio();
-    final dioClient = DioClient(dio);
-    _api = ApiClient(dioClient);
+    // Use ApiClient from DI (has interceptor and token)
+    _api = di.sl<ApiClient>();
     // try to get LocalStorage from DI if available
     try {
       _localStorage = di.sl<LocalStorage>();

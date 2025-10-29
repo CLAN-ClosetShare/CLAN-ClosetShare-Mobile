@@ -42,14 +42,59 @@ class AuthRepository {
       final data = raw;
       // Attempt to extract and persist tokens from a variety of response shapes.
       final extracted = _extractTokensFromMap(data);
+      
+      // Debug logging
+      assert(() {
+        // ignore: avoid_print
+        print('AuthRepository.login: Extracted tokens - accessToken: ${extracted.accessToken != null ? "EXISTS (${extracted.accessToken!.substring(0, 20)}...)" : "NULL"}, refreshToken: ${extracted.refreshToken != null ? "EXISTS (${extracted.refreshToken!.substring(0, 20)}...)" : "NULL"}');
+        return true;
+      }());
+      
       if (extracted.accessToken != null) {
-        await storage.saveString(StorageKeys.authToken, extracted.accessToken!);
+        final tokenString = extracted.accessToken!.trim();
+        // Validate token is a valid JWT string (should start with eyJ for base64 encoded JWT)
+        if (tokenString.startsWith('eyJ')) {
+          await storage.saveString(StorageKeys.authToken, tokenString);
+          // Verify token was saved correctly
+          final saved = await storage.getString(StorageKeys.authToken);
+          assert(() {
+            // ignore: avoid_print
+            print('AuthRepository.login: Token saved to storage: ${saved != null && saved.isNotEmpty && saved.startsWith("eyJ")}');
+            if (saved != null && !saved.startsWith('eyJ')) {
+              print('ERROR: Token was not saved correctly! Value: ${saved.substring(0, saved.length > 100 ? 100 : saved.length)}');
+            }
+            return true;
+          }());
+        } else {
+          assert(() {
+            // ignore: avoid_print
+            print('ERROR: Invalid token format! Token starts with: ${tokenString.substring(0, tokenString.length > 20 ? 20 : tokenString.length)}');
+            return true;
+          }());
+        }
       }
       if (extracted.refreshToken != null) {
-        await storage.saveString(
-          StorageKeys.refreshToken,
-          extracted.refreshToken!,
-        );
+        final refreshString = extracted.refreshToken!.trim();
+        // Validate refresh token is a valid JWT string
+        if (refreshString.startsWith('eyJ')) {
+          await storage.saveString(StorageKeys.refreshToken, refreshString);
+          // Verify refresh token was saved correctly
+          final savedRefresh = await storage.getString(StorageKeys.refreshToken);
+          assert(() {
+            // ignore: avoid_print
+            print('AuthRepository.login: Refresh token saved to storage: ${savedRefresh != null && savedRefresh.isNotEmpty && savedRefresh.startsWith("eyJ")}');
+            if (savedRefresh != null && !savedRefresh.startsWith('eyJ')) {
+              print('ERROR: Refresh token was not saved correctly! Value: ${savedRefresh.substring(0, savedRefresh.length > 100 ? 100 : savedRefresh.length)}');
+            }
+            return true;
+          }());
+        } else {
+          assert(() {
+            // ignore: avoid_print
+            print('ERROR: Invalid refresh token format! Token starts with: ${refreshString.substring(0, refreshString.length > 20 ? 20 : refreshString.length)}');
+            return true;
+          }());
+        }
       }
       return data;
     } on DioException catch (e) {
@@ -61,6 +106,42 @@ class AuthRepository {
     } catch (e) {
       throw Exception('Login failed: $e');
     }
+  }
+
+  /// Check if user has a valid token in storage
+  /// Returns true if token exists and is valid format, false otherwise
+  /// Note: This doesn't validate token with server - that happens automatically via interceptor
+  Future<bool> isAuthenticated() async {
+    final token = await storage.getString(StorageKeys.authToken);
+    if (token == null || token.isEmpty) return false;
+    
+    // Clean token if it's stored as object string
+    String cleanToken = token.trim();
+    if (cleanToken.startsWith('{')) {
+      try {
+        // Try to extract token from object string
+        final jsonMatch = RegExp(r'"access_token"\s*:\s*"([^"]+)"').firstMatch(cleanToken);
+        if (jsonMatch != null) {
+          cleanToken = jsonMatch.group(1)!;
+          await storage.saveString(StorageKeys.authToken, cleanToken);
+        } else {
+          // Fallback: extract JWT pattern
+          final tokenMatch = RegExp(r'eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+').firstMatch(cleanToken);
+          if (tokenMatch != null) {
+            cleanToken = tokenMatch.group(0)!;
+            await storage.saveString(StorageKeys.authToken, cleanToken);
+          } else {
+            return false; // Cannot extract valid token
+          }
+        }
+      } catch (_) {
+        return false;
+      }
+    }
+    
+    // Token must be a valid JWT format (starts with eyJ)
+    // Actual validation happens when API is called via interceptor
+    return cleanToken.startsWith('eyJ');
   }
 
   Future<void> logout() async {
@@ -157,43 +238,65 @@ class AuthRepository {
     String? refresh;
 
     void checkMap(Map<String, dynamic> m) {
-      // common keys
+      // common keys for access token (ONLY string values, NOT wrapper objects)
+      // Note: 'token' is NOT included here because it's a wrapper object, not a token value
       final accessKeys = [
         'access_token',
         'accessToken',
-        'token',
         'auth_token',
         'id_token',
         'jwt',
       ];
+      // common keys for refresh token
       final refreshKeys = ['refresh_token', 'refreshToken'];
+      
+      // Check for access token - ONLY accept String values
       for (final k in accessKeys) {
         if (access != null) break;
-        if (m.containsKey(k) && m[k] != null) access = m[k].toString();
+        if (m.containsKey(k) && m[k] != null) {
+          final value = m[k];
+          // ONLY accept String values, ignore objects/Maps
+          if (value is String && value.isNotEmpty) {
+            access = value;
+          }
+        }
       }
+      
+      // Check for refresh token - ONLY accept String values
       for (final k in refreshKeys) {
         if (refresh != null) break;
-        if (m.containsKey(k) && m[k] != null) refresh = m[k].toString();
+        if (m.containsKey(k) && m[k] != null) {
+          final value = m[k];
+          // ONLY accept String values, ignore objects/Maps
+          if (value is String && value.isNotEmpty) {
+            refresh = value;
+          }
+        }
       }
     }
 
-    // Check top-level
-    checkMap(map);
-    // Check common wrapper keys
+    // Priority 1: Check 'token' wrapper first (most common for your API)
+    if (map['token'] is Map<String, dynamic>) {
+      checkMap(map['token'] as Map<String, dynamic>);
+    }
+    
+    // Priority 2: Check top-level
+    if (access == null || refresh == null) {
+      checkMap(map);
+    }
+    
+    // Priority 3: Check common wrapper keys
     if ((access == null || refresh == null) && map['data'] is Map<String, dynamic>) {
       checkMap(map['data'] as Map<String, dynamic>);
     }
     if ((access == null || refresh == null) && map['result'] is Map<String, dynamic>) {
       checkMap(map['result'] as Map<String, dynamic>);
     }
-    // Also check 'token' or 'auth' wrapper commonly used by some APIs
-    if ((access == null || refresh == null) && map['token'] is Map<String, dynamic>) {
-      checkMap(map['token'] as Map<String, dynamic>);
-    }
     if ((access == null || refresh == null) && map['auth'] is Map<String, dynamic>) {
       checkMap(map['auth'] as Map<String, dynamic>);
     }
-    // Also check if any immediate child maps contain tokens (one level deep)
+    
+    // Priority 4: Check if any immediate child maps contain tokens (one level deep)
     if (access == null || refresh == null) {
       for (final v in map.values) {
         if (v is Map<String, dynamic>) {

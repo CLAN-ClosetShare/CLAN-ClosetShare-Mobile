@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:cookie_jar/cookie_jar.dart';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import '../network/api_client.dart';
 import '../network/dio_client.dart';
 import '../network/fetcher.dart';
@@ -35,17 +35,28 @@ Future<void> init() async {
   // Dio
   sl.registerLazySingleton(() => Dio());
 
-  // Create a PersistCookieJar so cookies survive app restarts
-  // Use path_provider to get a temp directory for persistent cookies
-  final docsPath = await getTemporaryDirectory();
-  final cookiePath = '${docsPath.path}/.cookies/';
-  final persistCookieJar = PersistCookieJar(storage: FileStorage(cookiePath));
+  // Create a CookieJar - use MemoryCookieJar for web, PersistCookieJar for mobile/desktop
+  CookieJar cookieJar;
+  if (kIsWeb) {
+    // Web platform: use MemoryCookieJar (cookies stored in memory)
+    cookieJar = CookieJar();
+  } else {
+    // Mobile/Desktop platform: use PersistCookieJar with file storage
+    try {
+      final docsPath = await getTemporaryDirectory();
+      final cookiePath = '${docsPath.path}/.cookies/';
+      cookieJar = PersistCookieJar(storage: FileStorage(cookiePath));
+    } catch (e) {
+      // Fallback to MemoryCookieJar if path_provider fails
+      cookieJar = CookieJar();
+    }
+  }
   // Register cookie jar in DI so other modules can access it (e.g., for debugging)
-  sl.registerLazySingleton<CookieJar>(() => persistCookieJar);
+  sl.registerLazySingleton<CookieJar>(() => cookieJar);
 
   // Network: create DioClient and inject cookieJar. AuthRepository will be created next and wired in.
   sl.registerLazySingleton<DioClient>(
-    () => DioClient(sl(), storage: sl<LocalStorage>(), cookieJar: persistCookieJar),
+    () => DioClient(sl(), storage: sl<LocalStorage>(), cookieJar: cookieJar),
   );
 
   // Repositories: create AuthRepository using the Dio instance from DioClient
